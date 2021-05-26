@@ -26,13 +26,17 @@ public class AnalysisService {
 
 	private static final Logger log = LoggerFactory.getLogger(AnalysisService.class);
 
-	private static final String BASE_URL = "https://explorer.lichess.ovh/lichess?fen={fen}&play={play}&variant=standard&speeds[]=rapid&speeds[]=classical&ratings[]=1600&ratings[]=1800&ratings[]=2000&ratings[]=2200&ratings[]=2500";
+	private static final String LICHESS_BASE_URL = "https://explorer.lichess.ovh/lichess?fen={fen}&play={play}&variant=standard&speeds[]=rapid&speeds[]=classical&ratings[]=1600&ratings[]=1800&ratings[]=2000&ratings[]=2200&ratings[]=2500";
+	private static final String MASTERS_BASE_URL = "https://explorer.lichess.ovh/master?fen={fen}&play={play}";
 
 	private static final int WAIT_MILLIS = 1000;
 
 	@Autowired private RestTemplate restTemplate;
 	@Autowired private CheckedFenService checkedFenService;
 	@Autowired private BlunderService blunderService;
+
+	@Value("${source}")
+	private String source;
 
 	@Value("${status.path}")
 	private String statusPath;
@@ -67,12 +71,14 @@ public class AnalysisService {
 					String fen = newPlay.getFen();
 
 					if (!checkedFenService.isAlreadyChecked(fen)) {
-						if (moveRating.getMaxPct() >= failPct) {
+						if (failPct == 0 || moveRating.getMaxPct() >= failPct) {
 							Blunder blunder = new Blunder(fen, initialSan, newPlay.toString(), moveRating.getTotal(), moveRating.getWhitePct(), moveRating.getDrawsPct(), moveRating.getBlackPct());
 							blundersFound.incrementAndGet();
 
 							blunderService.saveBlunder(blunder);
-						} else {
+						}
+
+						if (failPct == 0 || moveRating.getMaxPct() < failPct) {
 							plays.add(newPlay);
 						}
 
@@ -89,8 +95,10 @@ public class AnalysisService {
 	}
 
 	private Analysis tryAnalyze(Play play) {
+		String url = "master".equals(source) ? MASTERS_BASE_URL : LICHESS_BASE_URL;
+
 		try {
-			return restTemplate.getForObject(BASE_URL, Analysis.class, play.getFen(), "");
+			return restTemplate.getForObject(url, Analysis.class, play.getFen(), "");
 		} catch (Exception e) {
 			log.error("Error retrieving analysis", e);
 			doWait(60000);
